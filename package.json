@@ -1,0 +1,8 @@
+{
+  "name": "firefox-extensions",
+  "private": true,
+  "description": "Reddit Media Downloader and Redgifs Video Downloader Firefox extensions",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}

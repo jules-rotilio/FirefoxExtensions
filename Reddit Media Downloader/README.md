@@ -28,14 +28,44 @@ The extension supports:
 
 Reddit post data, media extraction, Redgifs resolution, and downloads are
 handled by `background.js`. The content script observes Reddit's page and adds
-a button under each post; it requests that post's JSON only after the button is
-clicked.
+a button under each post. When the button is clicked it sends only the post ID;
+the background script fetches the post's JSON, finds the media and downloads
+it. Media is only downloaded from `redd.it`, `redgifs.com` (including their
+subdomains) and `i.imgur.com`; posts linking elsewhere report an error.
 
 For Reddit-hosted videos, the extension checks Reddit's `has_audio` metadata.
 When audio is present, it selects the highest video rendition and highest
 available `HLS_AUDIO_N` track from Reddit's master playlist, then downloads
 the matching `.ts` video resource alongside the AAC file. If audio metadata
 is missing or false, it downloads Reddit's usual `fallback_url`.
+
+All files from one click are downloaded through the same temporary cookie
+store, which is removed once every file has finished. Stores left behind when
+Firefox closes during a download are removed the next time the extension
+starts.
+
+## File names
+
+Files are named after the subreddit and post ID, so every file from a post
+starts with the same prefix:
+
+| Media | Example |
+| --- | --- |
+| Image | `pics_1abc2d.jpg` |
+| Gallery | `pics_1abc2d_01.jpg`, `pics_1abc2d_02.png`, … |
+| Video without audio | `pics_1abc2d_DASH_720.mp4` |
+| Video with audio | `pics_1abc2d_HLS_720.ts` and `pics_1abc2d_HLS_AUDIO_128.aac` |
+| Redgifs video | `<watch-id>.mp4` |
+
+### Combining video and audio
+
+Reddit stores video and audio separately, so videos with sound arrive as two
+files. [ffmpeg](https://ffmpeg.org/) can combine them into one `.mp4` without
+re-encoding:
+
+```sh
+ffmpeg -i pics_1abc2d_HLS_720.ts -i pics_1abc2d_HLS_AUDIO_128.aac -map 0:v:0 -map 1:a:0 -c copy pics_1abc2d.mp4
+```
 
 ## Redgifs videos
 
@@ -99,6 +129,10 @@ SOFTWARE.
 
 ## Load temporarily
 
+From an unpacked copy of the extension (a built `.zip` extracted, or
+`build/Reddit Media Downloader/` in the source repository after running
+`pwsh -File ./make_archives.ps1 -StageOnly`):
+
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. Click **Load Temporary Add-on**.
-3. Select `manifest.json` from this directory.
+3. Select that copy's `manifest.json`.

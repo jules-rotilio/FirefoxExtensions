@@ -18,21 +18,9 @@ function injectButton(postElement, postId) {
         btn.disabled = true;
         btn.textContent = "Fetching post from Reddit...";
         try {
-            const postResult = await browser.runtime.sendMessage({
-                action: "getPostMedia",
-                postId
-            });
-            if (!postResult?.ok) {
-                throw new Error(postResult?.error || "Could not read this Reddit post");
-            }
-            if (!postResult.media) {
-                throw new Error("No downloadable media found in this post");
-            }
-
-            btn.textContent = "Starting download...";
             const result = await browser.runtime.sendMessage({
-                action: "downloadMedia",
-                media: postResult.media
+                action: "downloadPost",
+                postId
             });
             if (!result?.ok) {
                 throw new Error(result?.error || "Media download failed");

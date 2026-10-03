@@ -33,6 +33,11 @@ The HLS playlist does not need to contain an `.mp4` URL. A playlist containing
 an `.m4s` URI is a fragmented MP4 resource; the extension downloads the
 underlying resource directly and names the result `<watch-id>.mp4`.
 
+The button is shown while a video is detected and hidden otherwise. When
+clicked, it sends only the video ID; the background script resolves and
+downloads the video, and only from `redgifs.com` and its subdomains. After a
+download starts or fails, the button shows the result briefly and then resets.
+
 On feed pages where scrolling changes the visible video without changing the
 page URL, the download button finds the most visible/playing video and uses
 the Redgifs watch link from that video's card.
@@ -65,6 +70,10 @@ license does not grant trademark rights or imply endorsement.
 
 ## Load temporarily
 
+From an unpacked copy of the extension (a built `.zip` extracted, or
+`build/Redgifs Video Downloader/` in the source repository after running
+`pwsh -File ./make_archives.ps1 -StageOnly`):
+
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. Click **Load Temporary Add-on**.
-3. Select `manifest.json` from this directory.
+3. Select that copy's `manifest.json`.

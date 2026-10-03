@@ -6,7 +6,7 @@
     margin-left: 10px;
     font-size: 13px;
     font-weight: 500;
-    background: #0079d3;
+    background: #ff4500;
     color: white;
     border: none;
     border-radius: 20px;
@@ -24,9 +24,29 @@
     padding: 10px 16px;
     border: 0;
     border-radius: 6px;
-    background: #ff4500;
+    background: #d70003;
     color: #fff;
     font: 600 14px sans-serif;
     cursor: pointer;
     box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+/* Brand colors: Reddit orange and Redgifs red (from the extension icon). */
+.reddit-media-downloader-button:hover:not(:disabled) {
+    background: #e03d00;
+}
+
+#redgifs-video-downloader-button:hover:not(:disabled) {
+    background: #b00003;
+}
+
+.reddit-media-downloader-button:disabled,
+#redgifs-video-downloader-button:disabled {
+    cursor: progress;
+    opacity: 0.8;
+}
+
+/* Hidden while no video is detected; stated here so page styles cannot override it. */
+#redgifs-video-downloader-button[hidden] {
+    display: none;
 }

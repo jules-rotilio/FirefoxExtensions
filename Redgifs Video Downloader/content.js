@@ -8,6 +8,7 @@
 const DEBUG = false;
 const LOG_PREFIX = "[Redgifs Downloader]";
 const BUTTON_ID = "redgifs-video-downloader-button";
+const BUTTON_LABEL = "Fetch from Redgifs & download";
 const WATCH_URL_PATTERN =
     /^https:\/\/(?:www\.|v3\.)?redgifs\.com\/watch\/([A-Za-z0-9]+)/i;
 
@@ -114,7 +115,7 @@ function createDownloadButton(watchId) {
     button.id = BUTTON_ID;
     button.type = "button";
     button.dataset.watchId = watchId;
-    button.textContent = "Fetch from Redgifs & download";
+    button.textContent = BUTTON_LABEL;
     button.title = "Sends this video's ID to Redgifs to resolve its media URL.";
     button.setAttribute("aria-label", button.title);
 
@@ -135,44 +136,39 @@ async function downloadVideo(button) {
     setButtonState(button, "Finding video...", true);
 
     try {
-        const resolveMessage = { action: "resolveRedgifs", watchId };
-        const resolved = await browser.runtime.sendMessage(resolveMessage);
-        debug("Media resolved", { currentId: watchId, mediaUrl: resolved?.url });
-        if (!resolved?.ok || !resolved.url) {
-            throw new Error(resolved?.error || "No downloadable video was found");
-        }
-
-        setButtonState(button, "Starting download...", true);
-        const downloadMessage = {
-            action: "download",
-            url: resolved.url,
-            watchId
-        };
-        const result = await browser.runtime.sendMessage(downloadMessage);
+        const result = await browser.runtime.sendMessage({ action: "download", watchId });
         debug("Download response", { currentId: watchId, ok: result?.ok });
         if (!result?.ok) {
             throw new Error(result?.error || "Firefox could not start the download");
         }
 
         DownloadDialog.show("Download started", "success");
-        setButtonState(button, "Download started", false);
+        setButtonState(button, "Download started", true);
+        window.setTimeout(() => {
+            setButtonState(button, BUTTON_LABEL, false);
+            updateButton();
+        }, 1500);
     } catch (error) {
         console.error(`${LOG_PREFIX} Download failed`, error);
         debug("Download error", { watchId, error });
         DownloadDialog.show(error.message || "Download failed", "error");
-        setButtonState(button, "Download failed", false);
+        setButtonState(button, "Download failed", true);
         window.setTimeout(() => {
-            setButtonState(button, "Fetch from Redgifs & download", false);
+            setButtonState(button, BUTTON_LABEL, false);
+            updateButton();
         }, 2500);
     }
 }
 
-function addDownloadButton() {
+// Shows the button while a video is detected and hides it otherwise. A button
+// in the middle of a download stays visible until it has reset.
+function updateButton() {
     const watchId = getCurrentWatchId();
     const existingButton = document.getElementById(BUTTON_ID);
 
     if (existingButton) {
         if (watchId) existingButton.dataset.watchId = watchId;
+        if (!existingButton.disabled) existingButton.hidden = !watchId;
         return;
     }
     if (!watchId) return;
@@ -181,14 +177,14 @@ function addDownloadButton() {
 }
 
 // Redgifs can build or replace page content after the initial page load.
-addDownloadButton();
+updateButton();
 let updateScheduled = false;
 function scheduleButtonUpdate() {
     if (updateScheduled) return;
     updateScheduled = true;
     window.requestAnimationFrame(() => {
         updateScheduled = false;
-        addDownloadButton();
+        updateButton();
     });
 }
 

@@ -18,19 +18,33 @@ const RedgifsResolver = (() => {
         return url.href;
     }
 
-    // Abort slow downloads instead of letting browser requests hang forever.
-    async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+    // Abort slow requests instead of letting browser requests hang forever.
+    // With readText, the timeout also covers reading the body, so a server that
+    // stalls halfway through a response cannot hang the request either.
+    async function request(url, options, timeout, readText) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
         try {
-            return await fetch(upgradeHttpUrl(url), {
+            const response = await fetch(upgradeHttpUrl(url), {
                 ...options,
                 credentials: options.credentials ?? "omit",
                 signal: controller.signal
             });
+            const text = readText ? await response.text() : null;
+            return { response, text };
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    // For requests whose body is not needed, such as HEAD requests.
+    async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+        return (await request(url, options, timeout, false)).response;
+    }
+
+    // Resolves with { response, text }.
+    function fetchText(url, options = {}, timeout = 15000) {
+        return request(url, options, timeout, true);
     }
 
     function findHlsMediaUrl(playlist, playlistUrl) {
@@ -65,25 +79,21 @@ const RedgifsResolver = (() => {
 
     async function fetchPlaylistMedia(watchId) {
         const playlistUrl = HLS_PLAYLIST_URL(watchId);
-        const response = await fetchWithTimeout(playlistUrl, {
+        const { response, text } = await fetchText(playlistUrl, {
             headers: { "User-Agent": navigator.userAgent }
         });
         if (!response.ok) return null;
-        return findHlsMediaUrl(
-            await response.text(),
-            response.url || playlistUrl
-        );
+        return findHlsMediaUrl(text, response.url || playlistUrl);
     }
 
     async function fetchWatchPageMedia(watchId) {
-        const response = await fetchWithTimeout(WATCH_PAGE_URL(watchId), {
+        const { response, text: html } = await fetchText(WATCH_PAGE_URL(watchId), {
             headers: { "User-Agent": navigator.userAgent }
         });
         if (!response.ok) {
             throw new Error(`Redgifs returned HTTP ${response.status}`);
         }
 
-        const html = await response.text();
         const directMatch = html.match(MEDIA_MP4_PATTERN);
         const openGraphVideo = findOpenGraphVideo(html);
 
@@ -111,5 +121,5 @@ const RedgifsResolver = (() => {
         return watchPageMedia;
     }
 
-    return { fetchWithTimeout, resolve, upgradeHttpUrl };
+    return { fetchText, fetchWithTimeout, resolve, upgradeHttpUrl };
 })();

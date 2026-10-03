@@ -5,3 +5,5 @@ archives/
 # web-ext / node
 node_modules/
 .web-extension-id
+# Env
+.env

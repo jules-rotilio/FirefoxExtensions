@@ -3,6 +3,12 @@ const LOG_PREFIX = "[Reddit Media Downloader Background]";
 
 const debug = ExtensionDebug.create(DEBUG, LOG_PREFIX);
 
+// Media is only downloaded from these domains and their subdomains.
+const ALLOWED_MEDIA_DOMAINS = ["redd.it", "redgifs.com", "i.imgur.com"];
+
+IsolatedDownloader.removeStaleContainers().catch(error =>
+    debug("Stale container cleanup failed", { error: errorMessage(error) }));
+
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);
 }
@@ -17,8 +23,7 @@ async function fetchPostJson(postId) {
         credentials: "include",
         headers: { "Accept": "application/json" }
     };
-    const response = await RedgifsResolver.fetchWithTimeout(url, options);
-    const text = await response.text();
+    const { response, text } = await RedgifsResolver.fetchText(url, options);
 
     if (!response.ok && text.startsWith("<")) {
         throw new Error(`Reddit returned HTTP ${response.status}`);
@@ -28,11 +33,13 @@ async function fetchPostJson(postId) {
     try {
         parsed = JSON.parse(text);
     } catch {
-        const retry = await RedgifsResolver.fetchWithTimeout(url, {
+        const retry = await RedgifsResolver.fetchText(url, {
             credentials: "include"
         });
-        if (!retry.ok) throw new Error(`Reddit returned HTTP ${retry.status}`);
-        parsed = await retry.json();
+        if (!retry.response.ok) {
+            throw new Error(`Reddit returned HTTP ${retry.response.status}`);
+        }
+        parsed = JSON.parse(retry.text);
     }
 
     const post = parsed?.[0]?.data?.children?.[0]?.data;
@@ -52,7 +59,19 @@ function extractGallery(post) {
     return { type: "gallery", items };
 }
 
+// Files from a post share a "<subreddit>_<postId>" prefix so they are easy to
+// find and so a video and its audio track can be paired.
+function makeNamePrefix(post) {
+    const safe = value => String(value ?? "").replace(/[^A-Za-z0-9_-]/g, "");
+    return [safe(post.subreddit), safe(post.id)].filter(Boolean).join("_") || "reddit";
+}
+
 function extractMedia(post) {
+    const media = extractPostMedia(post);
+    return media ? { ...media, namePrefix: makeNamePrefix(post) } : null;
+}
+
+function extractPostMedia(post) {
     let url = "";
     try {
         url = RedgifsResolver.upgradeHttpUrl(post.url || "");
@@ -89,25 +108,25 @@ function extractMedia(post) {
     return post.gallery_data && post.media_metadata ? extractGallery(post) : null;
 }
 
-function makeTimestamp() {
-    const d = new Date();
-    const pad = value => String(value).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-        `_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+function getOriginalName(url) {
+    return url.split("?")[0].split("/").pop();
 }
 
-function getFilename(url, type) {
-    const original = url.split("?")[0].split("/").pop().toLowerCase();
-    return type === "video"
-        ? `${makeTimestamp()}_${original}`
-        : original;
+function getExtension(url) {
+    const match = getOriginalName(url).match(/\.([A-Za-z0-9]+)$/);
+    return match ? match[1].toLowerCase() : "bin";
 }
 
-async function downloadUrl(url, filename) {
-    url = RedgifsResolver.upgradeHttpUrl(url);
-    filename = await DownloadSettings.applyFolder(filename);
-    const downloadId = await IsolatedDownloader.download(url, filename);
-    return { ok: true, downloadId };
+// Downloads all files in one isolated container.
+async function downloadFiles(files) {
+    const items = await Promise.all(files.map(async ({ url, filename }) => ({
+        url: RedgifsResolver.upgradeHttpUrl(url),
+        filename: await DownloadSettings.applyFolder(filename)
+    })));
+    const downloadIds = await IsolatedDownloader.downloadAll(items, {
+        allowedDomains: ALLOWED_MEDIA_DOMAINS
+    });
+    return { ok: true, downloadIds };
 }
 
 function getRedditVideoBaseUrl(fallbackUrl) {
@@ -117,12 +136,12 @@ function getRedditVideoBaseUrl(fallbackUrl) {
 
 async function findRedditHlsResources(baseUrl) {
     const masterUrl = new URL("HLSPlaylist.m3u8", baseUrl).href;
-    const masterResponse = await RedgifsResolver.fetchWithTimeout(masterUrl);
+    const { response: masterResponse, text: masterPlaylist } =
+        await RedgifsResolver.fetchText(masterUrl);
     if (!masterResponse.ok) {
         throw new Error(`Reddit HLS playlist returned HTTP ${masterResponse.status}`);
     }
 
-    const masterPlaylist = await masterResponse.text();
     const videoQualities = [...masterPlaylist.matchAll(/HLS_(\d+)\.m3u8/gi)]
         .map(match => Number(match[1]))
         .filter(Number.isFinite);
@@ -142,10 +161,10 @@ async function findRedditHlsResources(baseUrl) {
     for (const quality of sortedQualities) {
         const audioPlaylistUrl = new URL(`HLS_AUDIO_${quality}.m3u8`, masterUrl).href;
         try {
-            const response = await RedgifsResolver.fetchWithTimeout(audioPlaylistUrl);
+            const { response, text: playlist } =
+                await RedgifsResolver.fetchText(audioPlaylistUrl);
             if (!response.ok) continue;
 
-            const playlist = await response.text();
             const audioFile = playlist
                 .split(/\r?\n/)
                 .map(line => line.trim())
@@ -173,21 +192,13 @@ async function downloadRedditVideoWithAudio(media) {
     const baseUrl = getRedditVideoBaseUrl(media.url);
     const { audioUrl, videoUrl, audioQuality, videoQuality } =
         await findRedditHlsResources(baseUrl);
-    const timestamp = makeTimestamp();
+    const prefix = media.namePrefix;
 
     debug("Selected Reddit HLS renditions", { videoQuality, audioQuality });
-    const results = await Promise.all([
-        downloadUrl(videoUrl, `${timestamp}_HLS_${videoQuality}.ts`),
-        downloadUrl(
-            audioUrl,
-            `${timestamp}_${audioUrl.split("/").pop().split("?")[0]}`
-        )
+    return downloadFiles([
+        { url: videoUrl, filename: `${prefix}_HLS_${videoQuality}.ts` },
+        { url: audioUrl, filename: `${prefix}_${getOriginalName(audioUrl)}` }
     ]);
-
-    return {
-        ok: true,
-        downloadIds: results.map(result => result.downloadId)
-    };
 }
 
 async function startDownload(media) {
@@ -197,22 +208,13 @@ async function startDownload(media) {
             throw new Error("Gallery contains no downloadable items");
         }
 
-        const results = await Promise.all(media.items.map(url => {
-            if (typeof url !== "string" || !url) {
-                throw new Error("Gallery contains an invalid media URL");
-            }
-
-            return downloadUrl(url, getFilename(url, "image"));
-        }));
-
-        return {
-            ok: true,
-            downloadIds: results.map(result => result.downloadId)
-        };
-    }
-
-    if (typeof media?.url !== "string" || !media.url) {
-        throw new Error("Media does not contain a downloadable URL");
+        const prefix = media.namePrefix;
+        const digits = String(media.items.length).length;
+        return downloadFiles(media.items.map((url, index) => ({
+            url,
+            filename: `${prefix}_${String(index + 1).padStart(Math.max(2, digits), "0")}` +
+                `.${getExtension(url)}`
+        })));
     }
 
     if (media.type === "video" && media.hasAudio === true) {
@@ -231,7 +233,7 @@ async function startDownload(media) {
         try {
             url = await RedgifsResolver.resolve(match[1]);
             debug("startDownload url", url);
-            return downloadUrl(url, filename);
+            return await downloadFiles([{ url, filename }]);
         } catch (redgifsError) {
             if (typeof media.fallbackUrl !== "string" || !media.fallbackUrl) {
                 throw redgifsError;
@@ -241,23 +243,28 @@ async function startDownload(media) {
                 error: errorMessage(redgifsError)
             });
             debug("fallback url", media.fallbackUrl);
-            return downloadUrl(media.fallbackUrl, filename);
+            return downloadFiles([{ url: media.fallbackUrl, filename }]);
         }
+    } else if (media.type === "image") {
+        filename = `${media.namePrefix}.${getExtension(url)}`;
     } else {
-        filename = getFilename(url, media.type);
+        filename = `${media.namePrefix}_${getOriginalName(url)}`;
     }
 
-    return downloadUrl(url, filename);
+    return downloadFiles([{ url, filename }]);
+}
+
+// The content script only sends a post ID; the media URLs are looked up and
+// downloaded here, so nothing from the page side decides what gets downloaded.
+async function downloadPost(postId) {
+    const media = extractMedia(await fetchPostJson(postId));
+    if (!media) throw new Error("No downloadable media found in this post");
+    return startDownload(media);
 }
 
 browser.runtime.onMessage.addListener(message => {
-    if (message.action === "getPostMedia") {
-        return fetchPostJson(message.postId)
-            .then(post => ({ ok: true, media: extractMedia(post) }))
-            .catch(error => ({ ok: false, error: errorMessage(error) }));
-    }
-    if (message.action === "downloadMedia") {
-        return startDownload(message.media)
+    if (message.action === "downloadPost") {
+        return downloadPost(message.postId)
             .catch(error => ({ ok: false, error: errorMessage(error) }));
     }
     debug("Unknown message", { action: message.action });
