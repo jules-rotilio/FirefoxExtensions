@@ -90,6 +90,11 @@ returned from the sandbox in `plain(...)` before `assert.deepEqual`.
 
 ## Build archives
 
+Run `pwsh -File ./build.ps1 -Help` (or `Get-Help ./build.ps1 -Full` from a
+PowerShell prompt) for every parameter, the combinations it accepts, and
+examples. PowerShell rejects invalid combinations such as `-Major -Minor` or
+`-StageOnly -Sign` before anything runs.
+
 Run `pwsh -File ./build.ps1` from this directory to build both
 extensions. For each extension the script stages `build/<extension>/`, runs
 `web-ext lint` (stopping on errors), and zips the staged copy with

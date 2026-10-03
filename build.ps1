@@ -1,32 +1,140 @@
+<#
+.SYNOPSIS
+    Stage, test, lint, build, sign, commit and push the Firefox extensions.
+
+.DESCRIPTION
+    For each selected extension, the script assembles a loadable copy in
+    build/<extension>/ (the extension's own files, the files from shared/
+    and an options.html generated from shared/options.template.html). It
+    then runs the tests (once), runs web-ext lint, and zips the staged copy
+    into archives/<extension>/<version>_<yyyy-MM-dd>/, pointing
+    archives/<extension>/latest at that directory.
+
+    Values in a .env file next to this script (KEY=VALUE lines) are loaded
+    for the run; variables already set in the environment take precedence.
+
+.PARAMETER Target
+    Which extension to process: Reddit, Redgifs or Both (default).
+
+.PARAMETER Major
+    Increment the first version number in the target's manifest.json and
+    reset the others to zero (1.4 -> 2.0). Needs -Target Reddit or -Target
+    Redgifs. Cannot be combined with -Minor.
+
+.PARAMETER Minor
+    Increment the second version number in the target's manifest.json and
+    reset any later ones to zero (1.4 -> 1.5). Needs -Target Reddit or
+    -Target Redgifs. Cannot be combined with -Major.
+
+.PARAMETER Sign
+    Submit each built extension to addons.mozilla.org as an unlisted version
+    and save the signed .xpi next to the .zip. Needs WEB_EXT_API_KEY and
+    WEB_EXT_API_SECRET, in .env or the environment. AMO refuses a version it
+    has already signed, so combine it with -Major or -Minor.
+
+.PARAMETER Commit
+    After building, stage every change in the repository, commit it, and add
+    an annotated tag per built extension (reddit-v1.3, redgifs-v1.2).
+    Existing tags are left unchanged. Check git status first: all changes
+    are included.
+
+.PARAMETER Message
+    Commit message to use with -Commit instead of "Build <extension>
+    <version>".
+
+.PARAMETER Push
+    Push the current branch and its tags to origin after building (and after
+    committing, with -Commit).
+
+.PARAMETER SkipTests
+    Do not run the tests before building.
+
+.PARAMETER StageOnly
+    Only assemble build/<extension>/ for loading in Firefox: no version
+    bump, tests, lint, archives, signing, commit or push.
+
+.PARAMETER Help
+    Show this help.
+
+.EXAMPLE
+    pwsh -File ./build.ps1
+    Test, lint and build both extensions at their current versions.
+
+.EXAMPLE
+    pwsh -File ./build.ps1 -StageOnly -Target Redgifs
+    Refresh build/Redgifs Video Downloader/ after editing, then click Reload
+    in about:debugging.
+
+.EXAMPLE
+    pwsh -File ./build.ps1 -Target Reddit -Minor -Sign -Commit -Push
+    Release a new minor version of Reddit Media Downloader: bump, test,
+    lint, build, sign, commit, tag and push.
+
+.EXAMPLE
+    pwsh -File ./build.ps1 -Commit -Message "Update README"
+    Build both extensions and commit with a custom message.
+#>
+[CmdletBinding(DefaultParameterSetName = "Build")]
 param(
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
+    [Parameter(ParameterSetName = "Stage")]
     [ValidateSet("Reddit", "Redgifs", "Both")]
     [string] $Target = "Both",
+
+    [Parameter(ParameterSetName = "BuildMajor", Mandatory)]
     [switch] $Major,
+
+    [Parameter(ParameterSetName = "BuildMinor", Mandatory)]
     [switch] $Minor,
-    # Only assemble build/<extension>/ for loading in Firefox; skip tests, lint and archives.
-    [switch] $StageOnly,
-    # Sign through addons.mozilla.org (unlisted). Needs WEB_EXT_API_KEY and WEB_EXT_API_SECRET.
+
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
     [switch] $Sign,
-    # Commit all changes and tag each built version; -Push also pushes to origin.
+
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
     [switch] $Commit,
-    [switch] $Push,
+
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
+    [ValidateNotNullOrEmpty()]
     [string] $Message,
-    [switch] $SkipTests
+
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
+    [switch] $Push,
+
+    [Parameter(ParameterSetName = "Build")]
+    [Parameter(ParameterSetName = "BuildMajor")]
+    [Parameter(ParameterSetName = "BuildMinor")]
+    [switch] $SkipTests,
+
+    [Parameter(ParameterSetName = "Stage", Mandatory)]
+    [switch] $StageOnly,
+
+    [Parameter(ParameterSetName = "Help", Mandatory)]
+    [switch] $Help
 )
-
-
-
 
 $ErrorActionPreference = "Stop"
 
-if ($Major -and $Minor) {
-    throw "Choose either -Major or -Minor, not both."
+if ($Help) {
+    Get-Help -Name $PSCommandPath -Detailed
+    return
 }
+
+# Rules the parameter sets cannot express.
 if (($Major -or $Minor) -and $Target -eq "Both") {
     throw "Version bumps require a single target: use -Target Reddit or -Target Redgifs."
 }
-if ($StageOnly -and ($Sign -or $Commit -or $Push)) {
-    throw "-StageOnly cannot be combined with -Sign, -Commit or -Push."
+if ($Message -and -not $Commit) {
+    throw "-Message is only used with -Commit."
 }
 
 # Load KEY=VALUE lines from .env (ignored by git) for this run only. Variables
