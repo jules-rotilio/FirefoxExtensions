@@ -14,7 +14,7 @@ Reddit Media Downloader/   extension-specific source (manifest, scripts, icon, R
 Redgifs Video Downloader/  extension-specific source
 shared/                    code and settings page used by both extensions
 tests/                     automated tests (Node's built-in test runner)
-make_archives.ps1          stage, test, lint, build, sign, commit and push
+build.ps1                  stage, test, lint, build, sign, commit and push
 build/                     generated unpacked extensions (not in git)
 archives/                  built .zip and signed .xpi files (not in git)
 ```
@@ -57,7 +57,7 @@ Each file in `shared/` has a specific role:
 Assemble both extensions without testing or archiving:
 
 ```powershell
-pwsh -File ./make_archives.ps1 -StageOnly
+pwsh -File ./build.ps1 -StageOnly
 ```
 
 Then load `build/<extension>/manifest.json` from
@@ -90,15 +90,15 @@ returned from the sandbox in `plain(...)` before `assert.deepEqual`.
 
 ## Build archives
 
-Run `pwsh -File ./make_archives.ps1` from this directory to build both
+Run `pwsh -File ./build.ps1` from this directory to build both
 extensions. For each extension the script stages `build/<extension>/`, runs
 `web-ext lint` (stopping on errors), and zips the staged copy with
 `web-ext build`. The tests run once before the extensions are built; pass
 `-SkipTests` to skip them. To build only one extension, pass a target:
 
 ```powershell
-pwsh -File ./make_archives.ps1 -Target Reddit
-pwsh -File ./make_archives.ps1 -Target Redgifs
+pwsh -File ./build.ps1 -Target Reddit
+pwsh -File ./build.ps1 -Target Redgifs
 ```
 
 The accepted targets are `Reddit`, `Redgifs`, and `Both`. `Both` is the
@@ -107,8 +107,8 @@ default. The script reads each extension's version from its `manifest.json`.
 To bump a version, target exactly one extension and pass one switch:
 
 ```powershell
-pwsh -File ./make_archives.ps1 -Target Reddit -Major
-pwsh -File ./make_archives.ps1 -Target Redgifs -Minor
+pwsh -File ./build.ps1 -Target Reddit -Major
+pwsh -File ./build.ps1 -Target Redgifs -Minor
 ```
 
 `-Major` increments the first numeric component and resets later components to
@@ -134,7 +134,7 @@ Windows and a symbolic link on other PowerShell platforms.
 (self-distributed) version and saves the signed `.xpi` next to the `.zip`:
 
 ```powershell
-pwsh -File ./make_archives.ps1 -Target Reddit -Minor -Sign
+pwsh -File ./build.ps1 -Target Reddit -Minor -Sign
 ```
 
 Create the key and secret at
@@ -167,7 +167,7 @@ tag is left unchanged. `-Message` replaces the default commit message
 tags to `origin`:
 
 ```powershell
-pwsh -File ./make_archives.ps1 -Target Redgifs -Minor -Sign -Commit -Push
+pwsh -File ./build.ps1 -Target Redgifs -Minor -Sign -Commit -Push
 ```
 
 Because `-Commit` includes all changes, check `git status` first.
