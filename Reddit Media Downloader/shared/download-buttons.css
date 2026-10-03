@@ -1,0 +1,32 @@
+.reddit-media-downloader-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    margin-left: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    background: #0079d3;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    height: 32px;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 15%);
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+#redgifs-video-downloader-button {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 2147483647;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 6px;
+    background: #ff4500;
+    color: #fff;
+    font: 600 14px sans-serif;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}

@@ -1,0 +1,69 @@
+{
+  "manifest_version": 2,
+  "name": "Redgifs Video Downloader",
+  "version": "1.1",
+  "description": "Clicking the button sends the selected Redgifs video ID to Redgifs to resolve and download that video.",
+  "icons": {
+    "48": "icons/cdnlogo-redgifs-icon-48.png"
+  },
+  "permissions": [
+    "downloads",
+    "storage",
+    "cookies",
+    "contextualIdentities",
+    "https://api.redgifs.com/*",
+    "https://media.redgifs.com/*",
+    "https://www.redgifs.com/*",
+    "https://redgifs.com/*",
+    "https://v3.redgifs.com/*"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "browser_action": {
+    "default_title": "Redgifs Video Downloader settings",
+    "default_popup": "options.html"
+  },
+  "background": {
+    "scripts": [
+      "shared/debug.js",
+      "shared/redgifs-resolver.js",
+      "shared/download-settings.js",
+      "shared/isolated-download.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.redgifs.com/*",
+        "*://redgifs.com/*",
+        "*://v3.redgifs.com/*"
+      ],
+      "css": [
+        "shared/download-buttons.css"
+      ],
+      "js": [
+        "shared/debug.js",
+        "shared/download-dialog.js",
+        "content.js"
+      ]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "redgifs-video-downloader@julesrotilio.fr",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "browsingActivity",
+          "websiteContent"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}

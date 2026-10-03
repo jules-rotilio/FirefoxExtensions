@@ -1,0 +1,61 @@
+{
+  "manifest_version": 2,
+  "name": "Reddit Media Downloader",
+  "version": "1.2",
+  "description": "On click, sends the post ID and, if logged in, Reddit session cookies to Reddit to retrieve media details.",
+
+  "icons": {
+    "48": "icons/lucide.dev-download-48.png"
+  },
+
+  "permissions": [
+    "downloads",
+    "storage",
+    "cookies",
+    "contextualIdentities",
+    "https://www.reddit.com/*",
+    "https://api.redgifs.com/*",
+    "https://media.redgifs.com/*",
+    "https://www.redgifs.com/*",
+    "https://v.redd.it/*"
+  ],
+
+  "background": {
+    "scripts": ["shared/debug.js", "shared/redgifs-resolver.js", "shared/download-settings.js", "shared/isolated-download.js", "background.js"]
+  },
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+
+  "browser_action": {
+    "default_title": "Reddit Media Downloader settings",
+    "default_popup": "options.html"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.reddit.com/*"],
+      "css": ["shared/download-buttons.css"],
+      "js": ["shared/debug.js", "shared/download-dialog.js", "content.js"]
+    }
+  ],
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "reddit-media-downloader@julesrotilio.fr",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "personallyIdentifyingInfo",
+          "browsingActivity",
+          "websiteContent"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}

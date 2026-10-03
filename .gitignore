@@ -1,0 +1,7 @@
+# Generated unpacked extensions (see make_archives.ps1)
+build/
+# Built zips and signed .xpi files
+archives/
+# web-ext / node
+node_modules/
+.web-extension-id
