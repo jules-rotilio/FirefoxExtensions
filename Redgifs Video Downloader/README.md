@@ -1,20 +1,24 @@
 # Redgifs Video Downloader
 
-Firefox extension based on Reddit Media Downloader. It adds a **Download
-video** button to Redgifs watch pages and saves videos in the folder configured
-in the extension settings. By default, files go into `media_folder/` inside Firefox's
-configured download directory.
+Firefox extension, companion to the Reddit Media Downloader (both share the
+same resolver and download code). It adds a floating **Fetch from Redgifs &
+download** button to Redgifs pages (watch, feed and niche pages) and saves
+videos in the folder configured in the extension settings. By default, files
+go into `media_folder/` inside Firefox's configured download directory.
 
 Click the extension's toolbar button to open its settings popup, or open the
 extension's settings from Firefox's Add-ons Manager. Choose any relative folder;
 nested paths can use either `/` or `\`. Leave the setting empty to use Firefox's
 download directory directly. Absolute paths are not supported because Firefox
-controls the base download directory.
+controls the base download directory. The settings page also has a theme
+choice (same as system, light or dark), which is remembered.
 
 Firefox's data disclosure lists browsing activity and website content. Only
 after you click the button does the extension send the selected video ID to
 Redgifs over HTTPS to resolve and download that video. Media downloads run in
-a temporary empty cookie store. The `cookies` and `contextualIdentities`
+a temporary empty cookie store, which is removed once the download finishes;
+stores left behind when Firefox closes during a download are removed the next
+time the extension starts. The `cookies` and `contextualIdentities`
 permissions are used only to create these stores; the extension does not read
 cookie values.
 
@@ -25,7 +29,9 @@ The resolver uses this source order:
    an `.mp4` file.
 3. Fall back to the watch page's `og:video` metadata, preferring the URL
    without `-silent`.
-4. Fall back to a direct `media.redgifs.com/<id>.mp4` URL in the page.
+4. Fall back to the first `media.redgifs.com/….mp4` URL found in the page.
+   Because the `og:video` URL is itself such a link, this step only finds
+   something new when the page has no `og:video` tag.
 5. Fall back to the original `og:video` URL, including `-silent` when that is
    the only available asset.
 

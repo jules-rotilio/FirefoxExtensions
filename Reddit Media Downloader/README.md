@@ -1,7 +1,8 @@
 # Reddit Media Downloader
 
-Firefox extension based on the Redgifs Video Downloader. It adds a
-**Download media** button to Reddit posts and saves media in the folder
+Firefox extension, companion to the Redgifs Video Downloader (both share the
+same resolver and download code). It adds a **Fetch from Reddit & download**
+button under each Reddit post and saves media in the folder
 configured in the extension settings. By default, files go into `media_folder/`
 inside Firefox's configured download directory.
 
@@ -9,7 +10,8 @@ Click the extension's toolbar button to open its settings popup, or open the
 extension's settings from Firefox's Add-ons Manager. Choose any relative folder;
 nested paths can use either `/` or `\`. Leave the setting empty to use Firefox's
 download directory directly. Absolute paths are not supported because Firefox
-controls the base download directory.
+controls the base download directory. The settings page also has a theme
+choice (same as system, light or dark), which is remembered.
 
 Firefox's data disclosure lists personally identifying information, browsing
 activity, and website content. No post data is requested until you click that
@@ -70,14 +72,18 @@ ffmpeg -i pics_1abc2d_HLS_720.ts -i pics_1abc2d_HLS_AUDIO_128.aac -map 0:v:0 -ma
 ## Redgifs videos
 
 Redgifs links use the same resolver as the standalone Redgifs Video
-Downloader:
+Downloader. If every Redgifs source fails and Reddit has its own copy of the
+video, that copy is downloaded instead, still named `<watch-id>.mp4`.
+The resolver's source order:
 
 1. Fetch the Redgifs HD HLS playlist.
 2. Extract the first `URI="..."` value and download that `.m4s` resource as
    an `.mp4` file.
 3. Fall back to the watch page's `og:video` metadata, preferring the URL
    without `-silent`.
-4. Fall back to a direct `media.redgifs.com/<id>.mp4` URL in the page.
+4. Fall back to the first `media.redgifs.com/….mp4` URL found in the page.
+   Because the `og:video` URL is itself such a link, this step only finds
+   something new when the page has no `og:video` tag.
 5. Fall back to the original `og:video` URL, including `-silent` when that is
    the only available asset.
 

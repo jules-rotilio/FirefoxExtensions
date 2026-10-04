@@ -14,7 +14,9 @@ Reddit Media Downloader/   extension-specific source (manifest, scripts, icon, R
 Redgifs Video Downloader/  extension-specific source
 shared/                    code and settings page used by both extensions
 tests/                     automated tests (Node's built-in test runner)
+package.json               defines `npm test`; no dependencies
 build.ps1                  stage, test, lint, build, sign, commit and push
+.env                       AMO signing credentials (not in git, see Signing)
 build/                     generated unpacked extensions (not in git)
 archives/                  built .zip and signed .xpi files (not in git)
 ```
@@ -24,6 +26,15 @@ script assembles a complete, loadable copy of each extension in
 `build/<extension>/`. Edit files in the extension folders and in `shared/`,
 never in `build/`, which is replaced on every run.
 
+## Requirements
+
+- [PowerShell 7](https://learn.microsoft.com/powershell/) (`pwsh`) for
+  `build.ps1`.
+- [Node.js](https://nodejs.org/) 22 or later for the tests.
+- [web-ext](https://github.com/mozilla/web-ext) (`npm install --global
+  web-ext`) for linting, building and signing.
+- git, for `-Commit` and `-Push`.
+
 ## Shared sources
 
 Each file in `shared/` has a specific role:
@@ -31,8 +42,11 @@ Each file in `shared/` has a specific role:
 - `debug.js` — small development and troubleshooting helpers. It centralizes
   debug logging and can be used to emit extra console output when diagnosing
   extension behavior without changing the main flow.
-- `redgifs-resolver.js` — resolves Redgifs media URLs, upgrades insecure HTTP
-  links to HTTPS, and fetches the final playable source before download.
+- `redgifs-resolver.js` — resolves a Redgifs video ID to a downloadable media
+  URL. It also provides the HTTP helpers both extensions use for every
+  request: `fetchText` (the 15-second timeout also covers reading the
+  response) and `fetchWithTimeout` (for requests whose body is not read).
+  Both upgrade HTTP to HTTPS and send no cookies unless asked to.
 - `download-dialog.js` — shows a short-lived toast on the page to report
   whether a download started or failed. Only one toast is visible at a time.
 - `download-options.js` — wires up the settings page (`options.html`): it loads
@@ -41,14 +55,17 @@ Each file in `shared/` has a specific role:
 - `download-settings.js` — validates and normalizes the chosen folder name.
   It rejects absolute paths, `..` traversal attempts, and invalid Windows path
   components before the path is stored or used.
-- `download-buttons.css` — shared styling for the extension buttons, prompts,
-  and popup controls so each package uses the same UI treatment.
+- `download-buttons.css` — the page buttons: the Reddit button under each post
+  (Reddit orange) and the floating Redgifs button (Redgifs red). The toast
+  and the settings page carry their own styles.
 - `isolated-download.js` — downloads through a temporary container (an
   isolated cookie store) so the normal browsing session is not sent to media
   hosts. All files from one click share one container, which is removed when
   they finish; leftover containers are removed when the extension starts.
-- `options-theme.js` — the settings page's light/dark theme, saved in browser
-  storage.
+  Each extension passes the list of domains it may download from, and any
+  other URL is refused before a download starts.
+- `options-theme.js` — the settings page's theme (same as system, light or
+  dark), saved in browser storage.
 - `options.template.html` — the settings page. The build fills in each
   extension's name and example folder to produce its `options.html`.
 
@@ -66,7 +83,7 @@ editing, run the command again and click **Reload** in `about:debugging`.
 
 Alternatively, `web-ext run --source-dir "build/Reddit Media Downloader"`
 starts a separate Firefox profile with the extension and reloads it whenever
-the staged files change.
+the staged files change, that is, each time you run `-StageOnly` again.
 
 ## Tests
 
@@ -81,8 +98,11 @@ they run without Firefox or network access. Each test file covers one area:
 
 - `download-settings.test.js` — folder validation and storage.
 - `redgifs-resolver.test.js` — the Redgifs source order and fallbacks.
-- `isolated-download.test.js` — container creation and cleanup.
-- `reddit-background.test.js` — Reddit media detection and file names.
+- `isolated-download.test.js` — container creation and cleanup, and the
+  allowed-domain check.
+- `reddit-background.test.js` — the `downloadPost` message, Reddit media
+  detection and file names.
+- `redgifs-background.test.js` — the Redgifs `download` message.
 
 To add a test, copy an existing `test(...)` block, change the input, and state
 the expected result with `assert.equal` or `assert.deepEqual`. Wrap values
@@ -154,9 +174,8 @@ WEB_EXT_API_SECRET=...
 The script reads `.env` at startup (blank lines and `#` comments are skipped,
 quotes around values are removed) and sets the variables for that run only.
 Variables already set in the environment win over `.env`. `.env` is listed in
-`.gitignore`; never commit it. AMO refuses a
-version number it has already signed, so bump the version before signing
-again.
+`.gitignore`; never commit it. AMO refuses a version number it has already
+signed, so bump the version before signing again.
 
 ## Git
 
@@ -168,7 +187,7 @@ up by git.
 `-Commit` stages every change in the repository, commits it, and adds an
 annotated tag per built extension (`reddit-v1.3`, `redgifs-v1.2`). An existing
 tag is left unchanged. `-Message` replaces the default commit message
-(`Build Reddit Media Downloader 1.3`). `-Push` pushes the current branch and its
+(`Build Reddit Media Downloader 1.3`) and is only accepted with `-Commit`. `-Push` pushes the current branch and its
 tags to `origin`:
 
 ```powershell
