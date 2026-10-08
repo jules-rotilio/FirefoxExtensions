@@ -36,10 +36,13 @@ it. Media is only downloaded from `redd.it`, `redgifs.com` (including their
 subdomains) and `i.imgur.com`; posts linking elsewhere report an error.
 
 For Reddit-hosted videos, the extension checks Reddit's `has_audio` metadata.
-When audio is present, it selects the highest video rendition and highest
-available `HLS_AUDIO_N` track from Reddit's master playlist, then downloads
-the matching `.ts` video resource alongside the AAC file. If audio metadata
-is missing or false, it downloads Reddit's usual `fallback_url`.
+When audio is present, it reads Reddit's master playlist (`HLSPlaylist.m3u8`),
+selects the highest video rendition and the highest audio track, and downloads
+both files. Newer videos use CMAF names (`CMAF_720.m3u8`, `CMAF_AUDIO_128.m3u8`),
+whose playlists point to one complete `.mp4` file each; older videos use HLS
+names (`HLS_720.m3u8`, `HLS_AUDIO_128.m3u8`) with a `.ts` video file and an
+`.aac` audio file. If audio metadata is missing or false, it downloads Reddit's
+usual `fallback_url`.
 
 All files from one click are downloaded through the same temporary cookie
 store, which is removed once every file has finished. Stores left behind when
@@ -56,7 +59,8 @@ starts with the same prefix:
 | Image | `pics_1abc2d.jpg` |
 | Gallery | `pics_1abc2d_01.jpg`, `pics_1abc2d_02.png`, … |
 | Video without audio | `pics_1abc2d_DASH_720.mp4` |
-| Video with audio | `pics_1abc2d_HLS_720.ts` and `pics_1abc2d_HLS_AUDIO_128.aac` |
+| Video with audio (newer videos) | `pics_1abc2d_CMAF_720.mp4` and `pics_1abc2d_CMAF_AUDIO_128.mp4` |
+| Video with audio (older videos) | `pics_1abc2d_HLS_720.ts` and `pics_1abc2d_HLS_AUDIO_128.aac` |
 | Redgifs video | `<watch-id>.mp4` |
 
 ### Combining video and audio
@@ -66,8 +70,10 @@ files. [ffmpeg](https://ffmpeg.org/) can combine them into one `.mp4` without
 re-encoding:
 
 ```sh
-ffmpeg -i pics_1abc2d_HLS_720.ts -i pics_1abc2d_HLS_AUDIO_128.aac -map 0:v:0 -map 1:a:0 -c copy pics_1abc2d.mp4
+ffmpeg -i pics_1abc2d_CMAF_720.mp4 -i pics_1abc2d_CMAF_AUDIO_128.mp4 -map 0:v:0 -map 1:a:0 -c copy pics_1abc2d.mp4
 ```
+
+For older videos, use the `.ts` and `.aac` files as the two inputs instead.
 
 ## Redgifs videos
 

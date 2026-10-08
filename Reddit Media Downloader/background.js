@@ -134,6 +134,46 @@ function getRedditVideoBaseUrl(fallbackUrl) {
     return new URL(".", videoUrl).href;
 }
 
+// Reddit's HLS playlists use one of two naming schemes: older videos list
+// HLS_<n>.m3u8 and HLS_AUDIO_<n>.m3u8, newer ones CMAF_<n>.m3u8 and
+// CMAF_AUDIO_<n>.m3u8. Returns the renditions found, best quality first.
+function listRenditions(masterPlaylist, pattern) {
+    const renditions = new Map();
+    for (const [playlist, scheme, quality] of masterPlaylist.matchAll(pattern)) {
+        renditions.set(playlist, { playlist, scheme: scheme.toUpperCase(), quality: Number(quality) });
+    }
+    return [...renditions.values()].sort((left, right) => right.quality - left.quality);
+}
+
+// The media file a playlist points to: the EXT-X-MAP file when the playlist
+// addresses byte ranges of one file (CMAF), otherwise its first media line.
+function findPlaylistMedia(playlist, playlistUrl) {
+    const map = playlist.match(/#EXT-X-MAP:URI="([^"]+)"/i);
+    const file = map?.[1] ?? playlist
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .find(line => line && !line.startsWith("#"));
+    return file ? new URL(file, playlistUrl).href : null;
+}
+
+async function fetchPlaylistMedia(playlistUrl) {
+    const { response, text } = await RedgifsResolver.fetchText(playlistUrl);
+    if (!response.ok) {
+        throw new Error(`Reddit playlist returned HTTP ${response.status}`);
+    }
+    return findPlaylistMedia(text, response.url || playlistUrl);
+}
+
+async function findVideoUrl(rendition, masterUrl, baseUrl) {
+    // Older HLS videos are stored as one HLS_<n>.ts file next to the playlist.
+    if (rendition.scheme === "HLS") {
+        return new URL(`HLS_${rendition.quality}.ts`, baseUrl).href;
+    }
+    const videoUrl = await fetchPlaylistMedia(new URL(rendition.playlist, masterUrl).href);
+    if (!videoUrl) throw new Error("Reddit video playlist did not list a media file");
+    return videoUrl;
+}
+
 async function findRedditHlsResources(baseUrl) {
     const masterUrl = new URL("HLSPlaylist.m3u8", baseUrl).href;
     const { response: masterResponse, text: masterPlaylist } =
@@ -142,50 +182,36 @@ async function findRedditHlsResources(baseUrl) {
         throw new Error(`Reddit HLS playlist returned HTTP ${masterResponse.status}`);
     }
 
-    const videoQualities = [...masterPlaylist.matchAll(/HLS_(\d+)\.m3u8/gi)]
-        .map(match => Number(match[1]))
-        .filter(Number.isFinite);
-    if (videoQualities.length === 0) {
+    const [video] = listRenditions(masterPlaylist, /\b(HLS|CMAF)_(\d+)\.m3u8/gi);
+    if (!video) {
         throw new Error("Reddit HLS playlist did not list any video renditions");
     }
-    const videoQuality = Math.max(...videoQualities);
-
-    const audioQualities = [...masterPlaylist.matchAll(/HLS_AUDIO_(\d+)\.m3u8/gi)]
-        .map(match => Number(match[1]))
-        .filter(Number.isFinite);
-    const sortedQualities = [...new Set(audioQualities)].sort((left, right) => right - left);
-    if (sortedQualities.length === 0) {
+    const audioRenditions = listRenditions(masterPlaylist, /\b(HLS|CMAF)_AUDIO_(\d+)\.m3u8/gi);
+    if (audioRenditions.length === 0) {
         throw new Error("Reddit HLS playlist did not list any audio tracks");
     }
 
-    for (const quality of sortedQualities) {
-        const audioPlaylistUrl = new URL(`HLS_AUDIO_${quality}.m3u8`, masterUrl).href;
+    const videoUrl = await findVideoUrl(video, masterUrl, baseUrl);
+    for (const audio of audioRenditions) {
         try {
-            const { response, text: playlist } =
-                await RedgifsResolver.fetchText(audioPlaylistUrl);
-            if (!response.ok) continue;
-
-            const audioFile = playlist
-                .split(/\r?\n/)
-                .map(line => line.trim())
-                .find(line => line && !line.startsWith("#") && /\.aac(?:[?#].*)?$/i.test(line));
-            if (audioFile) {
+            const audioUrl = await fetchPlaylistMedia(new URL(audio.playlist, masterUrl).href);
+            if (audioUrl) {
                 return {
-                    videoUrl: new URL(`HLS_${videoQuality}.ts`, baseUrl).href,
-                    audioUrl: new URL(audioFile, response.url || audioPlaylistUrl).href,
-                    videoQuality,
-                    audioQuality: quality
+                    videoUrl,
+                    audioUrl,
+                    videoQuality: video.quality,
+                    audioQuality: audio.quality
                 };
             }
         } catch (error) {
             debug("Reddit audio playlist lookup failed", {
-                quality,
+                quality: audio.quality,
                 error: errorMessage(error)
             });
         }
     }
 
-    throw new Error("Reddit HLS playlist did not expose a downloadable AAC track");
+    throw new Error("Reddit HLS playlist did not expose a downloadable audio track");
 }
 
 async function downloadRedditVideoWithAudio(media) {
@@ -196,7 +222,7 @@ async function downloadRedditVideoWithAudio(media) {
 
     debug("Selected Reddit HLS renditions", { videoQuality, audioQuality });
     return downloadFiles([
-        { url: videoUrl, filename: `${prefix}_HLS_${videoQuality}.ts` },
+        { url: videoUrl, filename: `${prefix}_${getOriginalName(videoUrl)}` },
         { url: audioUrl, filename: `${prefix}_${getOriginalName(audioUrl)}` }
     ]);
 }

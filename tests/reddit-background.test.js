@@ -19,6 +19,9 @@ const BACKGROUND_SCRIPTS = [
     "Reddit Media Downloader/background.js"
 ];
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const VIDEO_BASE = "https://v.redd.it/xyz/";
 const HLS_ROUTES = {
     [`${VIDEO_BASE}HLSPlaylist.m3u8`]: {
@@ -152,6 +155,34 @@ test("videos with audio download the best HLS video and audio with a shared pref
         [
             [`${VIDEO_BASE}HLS_720.ts`, "pics_1abc2d_HLS_720.ts"],
             [`${VIDEO_BASE}HLS_AUDIO_128.aac`, "pics_1abc2d_HLS_AUDIO_128.aac"]
+        ]
+    );
+    assert.equal(state.createdIdentities.length, 1);
+});
+
+// Playlists captured from a real Reddit video in the newer CMAF format
+// (segment lists shortened).
+function cmafRoutes() {
+    const dir = path.join(__dirname, "fixtures", "reddit-cmaf");
+    return Object.fromEntries(fs.readdirSync(dir).map(file =>
+        [`${VIDEO_BASE}${file}`, { body: fs.readFileSync(path.join(dir, file), "utf8") }]));
+}
+
+test("CMAF videos with audio download the best video and audio files from the playlists", async () => {
+    const { startDownload, state } = load({ routes: cmafRoutes() });
+    const media = {
+        type: "video",
+        url: `${VIDEO_BASE}CMAF_720.mp4?source=fallback`,
+        hasAudio: true,
+        namePrefix: "pics_1abc2d"
+    };
+    const result = await startDownload(media);
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(
+        state.downloads.map(item => [item.url, item.filename]),
+        [
+            [`${VIDEO_BASE}CMAF_720.mp4`, "pics_1abc2d_CMAF_720.mp4"],
+            [`${VIDEO_BASE}CMAF_AUDIO_128.mp4`, "pics_1abc2d_CMAF_AUDIO_128.mp4"]
         ]
     );
     assert.equal(state.createdIdentities.length, 1);
