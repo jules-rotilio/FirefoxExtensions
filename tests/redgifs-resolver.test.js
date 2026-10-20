@@ -36,7 +36,8 @@ test("resolve uses the HLS playlist first", async () => {
     // Regression test: the playlist body used to be read twice, which always
     // threw and silently skipped this step.
     const { resolver, calls } = load({
-        [PLAYLIST_URL]: { body: '#EXTM3U\n#EXT-X-MAP:URI="https://media.redgifs.com/AbcDef.m4s"\n' }
+        [PLAYLIST_URL]: { body: '#EXTM3U\n#EXT-X-MAP:URI="https://media.redgifs.com/AbcDef.m4s"\n' },
+        "https://media.redgifs.com/AbcDef.m4s": { status: 200 }
     });
     assert.equal(await resolver.resolve("AbcDef"), "https://media.redgifs.com/AbcDef.m4s");
     assert.ok(calls.every(call => call.url !== WATCH_URL), "watch page should not be fetched");
@@ -57,10 +58,16 @@ test("resolve falls back to a direct mp4 link, then to the -silent video", async
 
     // The og:video URL is itself a media.redgifs.com link, so the direct-link
     // search only adds something when the page has no og:video tag.
-    const withDirect = load({ [WATCH_URL]: { body: watchPage({ directMp4: direct }) } });
+    const withDirect = load({
+        [WATCH_URL]: { body: watchPage({ directMp4: direct }) },
+        [direct]: { status: 200 }
+    });
     assert.equal(await withDirect.resolver.resolve("AbcDef"), direct);
 
-    const silentOnly = load({ [WATCH_URL]: { body: watchPage({ ogVideo: silent }) } });
+    const silentOnly = load({
+        [WATCH_URL]: { body: watchPage({ ogVideo: silent }) },
+        [silent]: { status: 200 }
+    });
     assert.equal(await silentOnly.resolver.resolve("AbcDef"), silent);
 });
 
@@ -70,6 +77,39 @@ test("resolve reports errors from the watch page", async () => {
 
     const empty = load({ [WATCH_URL]: { body: watchPage() } });
     await assert.rejects(empty.resolver.resolve("AbcDef"), { message: /did not expose/ });
+});
+
+test("resolve skips media files that no longer exist", async () => {
+    // Redgifs keeps serving the playlist of a deleted video, but its media file
+    // answers 403 and the watch page 410 Gone.
+    const deleted = {
+        [PLAYLIST_URL]: { body: '#EXTM3U\n#EXT-X-MAP:URI="https://media.redgifs.com/AbcDef.m4s"\n' },
+        "https://media.redgifs.com/AbcDef.m4s": { status: 403 },
+        [WATCH_URL]: { status: 410 }
+    };
+    await assert.rejects(load(deleted).resolver.resolve("AbcDef"),
+        { message: "This Redgifs video no longer exists" });
+
+    const missingCandidates = load({
+        ...deleted,
+        [WATCH_URL]: { body: watchPage({ ogVideo: "https://media.redgifs.com/AbcDef-silent.mp4" }) }
+    });
+    await assert.rejects(missingCandidates.resolver.resolve("AbcDef"),
+        { message: "This Redgifs video is no longer available" });
+
+    const pageStillWorks = load({
+        ...deleted,
+        [WATCH_URL]: { body: watchPage({ ogVideo: "https://media.redgifs.com/AbcDef.mp4" }) },
+        "https://media.redgifs.com/AbcDef.mp4": { status: 200 }
+    });
+    assert.equal(await pageStillWorks.resolver.resolve("AbcDef"), "https://media.redgifs.com/AbcDef.mp4");
+});
+
+test("mediaExists uses a HEAD request", async () => {
+    const { resolver, calls } = load({ "https://media.redgifs.com/a.mp4": { status: 200 } });
+    assert.equal(await resolver.mediaExists("https://media.redgifs.com/a.mp4"), true);
+    assert.equal(await resolver.mediaExists("https://media.redgifs.com/gone.mp4"), false);
+    assert.ok(calls.every(call => call.method === "HEAD"));
 });
 
 test("fetchText times out when the body stalls after the headers arrive", async () => {

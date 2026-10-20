@@ -35,6 +35,11 @@ The resolver uses this source order:
 5. Fall back to the original `og:video` URL, including `-silent` when that is
    the only available asset.
 
+Each candidate is checked with a `HEAD` request before it is used, and skipped
+if it does not exist: Redgifs keeps serving the playlist of a deleted video,
+but its media file then answers 403. If the watch page answers 404 or 410, the
+video is reported as no longer existing instead of downloading a missing file.
+
 The HLS playlist does not need to contain an `.mp4` URL. A playlist containing
 an `.m4s` URI is a fragmented MP4 resource; the extension downloads the
 underlying resource directly and names the result `<watch-id>.mp4`.

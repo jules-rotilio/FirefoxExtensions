@@ -79,7 +79,8 @@ For older videos, use the `.ts` and `.aac` files as the two inputs instead.
 
 Redgifs links use the same resolver as the standalone Redgifs Video
 Downloader. If every Redgifs source fails and Reddit has its own copy of the
-video, that copy is downloaded instead, still named `<watch-id>.mp4`.
+video, that copy is downloaded instead, still named `<watch-id>.mp4`; Reddit's
+copy is checked the same way, and if it is missing too, an error is shown.
 The resolver's source order:
 
 1. Fetch the Redgifs HD HLS playlist.
@@ -92,6 +93,11 @@ The resolver's source order:
    something new when the page has no `og:video` tag.
 5. Fall back to the original `og:video` URL, including `-silent` when that is
    the only available asset.
+
+Each candidate is checked with a `HEAD` request before it is used, and skipped
+if it does not exist: Redgifs keeps serving the playlist of a deleted video,
+but its media file then answers 403. If the watch page answers 404 or 410, the
+video is reported as no longer existing instead of downloading a missing file.
 
 The HLS playlist does not need to contain an `.mp4` URL. A playlist containing
 an `.m4s` URI is a fragmented MP4 resource; the extension downloads the

@@ -62,19 +62,26 @@ const RedgifsResolver = (() => {
         return url.replace(/-silent(?=\.mp4(?:\?|$))/i, "");
     }
 
-    async function chooseNonSilentVideo(url) {
-        const preferredUrl = removeSilentSuffix(url);
-        if (preferredUrl === url) return url;
-
+    // Redgifs keeps listing deleted videos in their playlist, but the media file
+    // itself then answers 403 or 404. A HEAD request checks this without
+    // downloading anything; a network error counts as missing.
+    async function mediaExists(url) {
         try {
-            const response = await fetchWithTimeout(preferredUrl, {
+            const response = await fetchWithTimeout(url, {
                 method: "HEAD",
                 headers: { "User-Agent": navigator.userAgent }
             }, 5000);
-            return response.ok ? preferredUrl : null;
+            return response.ok;
         } catch {
-            return null;
+            return false;
         }
+    }
+
+    async function firstExistingMedia(urls) {
+        for (const url of new Set(urls.filter(Boolean))) {
+            if (await mediaExists(url)) return url;
+        }
+        return null;
     }
 
     async function fetchPlaylistMedia(watchId) {
@@ -90,36 +97,42 @@ const RedgifsResolver = (() => {
         const { response, text: html } = await fetchText(WATCH_PAGE_URL(watchId), {
             headers: { "User-Agent": navigator.userAgent }
         });
+        if (response.status === 404 || response.status === 410) {
+            throw new Error("This Redgifs video no longer exists");
+        }
         if (!response.ok) {
             throw new Error(`Redgifs returned HTTP ${response.status}`);
         }
 
-        const directMatch = html.match(MEDIA_MP4_PATTERN);
+        const directMatch = html.match(MEDIA_MP4_PATTERN)?.[0];
         const openGraphVideo = findOpenGraphVideo(html);
 
         // Prefer the non-silent variant when the page exposes it, otherwise fall back.
-        if (openGraphVideo) {
-            const nonSilentUrl = await chooseNonSilentVideo(openGraphVideo);
-            if (nonSilentUrl) return nonSilentUrl;
-        }
-        if (directMatch) return directMatch[0];
-        return openGraphVideo;
+        return firstExistingMedia([
+            openGraphVideo && removeSilentSuffix(openGraphVideo),
+            directMatch,
+            openGraphVideo
+        ]);
     }
 
+    // Resolves with a media URL that was checked to exist, or rejects.
     async function resolve(watchId) {
+        let playlistMedia = null;
         try {
-            const playlistMedia = await fetchPlaylistMedia(watchId);
-            if (playlistMedia) return playlistMedia;
+            playlistMedia = await fetchPlaylistMedia(watchId);
         } catch {
             // The watch-page fallbacks are intentionally tried next.
         }
+        if (playlistMedia && await mediaExists(playlistMedia)) return playlistMedia;
 
         const watchPageMedia = await fetchWatchPageMedia(watchId);
         if (!watchPageMedia) {
-            throw new Error("Redgifs did not expose a downloadable media URL");
+            throw new Error(playlistMedia
+                ? "This Redgifs video is no longer available"
+                : "Redgifs did not expose a downloadable media URL");
         }
         return watchPageMedia;
     }
 
-    return { fetchText, fetchWithTimeout, resolve, upgradeHttpUrl };
+    return { fetchText, fetchWithTimeout, mediaExists, resolve, upgradeHttpUrl };
 })();

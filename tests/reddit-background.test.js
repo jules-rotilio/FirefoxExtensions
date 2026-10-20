@@ -168,6 +168,32 @@ function cmafRoutes() {
         [`${VIDEO_BASE}${file}`, { body: fs.readFileSync(path.join(dir, file), "utf8") }]));
 }
 
+test("a deleted Redgifs video falls back to Reddit's copy, or reports both missing", async () => {
+    const redgifsGone = {
+        "https://api.redgifs.com/v2/gifs/abcdef/hd.m3u8": {
+            body: '#EXTM3U\n#EXT-X-MAP:URI="https://media.redgifs.com/AbcDef.m4s"\n'
+        },
+        "https://media.redgifs.com/AbcDef.m4s": { status: 403 },
+        "https://www.redgifs.com/watch/AbcDef": { status: 410 }
+    };
+    const media = {
+        type: "redgifs",
+        url: "https://www.redgifs.com/watch/AbcDef?from=embed",
+        fallbackUrl: `${VIDEO_BASE}CMAF_1080.mp4`,
+        namePrefix: "pics_1abc2d"
+    };
+
+    const withCopy = load({ routes: { ...redgifsGone, [`${VIDEO_BASE}CMAF_1080.mp4`]: { status: 200 } } });
+    assert.equal((await withCopy.startDownload(media)).ok, true);
+    assert.deepEqual(withCopy.state.downloads.map(item => [item.url, item.filename]),
+        [[`${VIDEO_BASE}CMAF_1080.mp4`, "AbcDef.mp4"]]);
+
+    const withoutCopy = load({ routes: redgifsGone });
+    await assert.rejects(withoutCopy.startDownload(media),
+        { message: "This Redgifs video no longer exists, and Reddit's copy is missing too" });
+    assert.equal(withoutCopy.state.downloads.length, 0);
+});
+
 test("CMAF videos with audio download the best video and audio files from the playlists", async () => {
     const { startDownload, state } = load({ routes: cmafRoutes() });
     const media = {

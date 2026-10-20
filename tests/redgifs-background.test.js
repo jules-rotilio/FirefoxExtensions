@@ -14,10 +14,11 @@ const BACKGROUND_SCRIPTS = [
 
 const PLAYLIST_URL = "https://api.redgifs.com/v2/gifs/abcdef/hd.m3u8";
 
-function load(mediaUrl) {
+function load(mediaUrl, mediaStatus = 200) {
     const { browser, state } = createBrowser({ manifestName: "Redgifs Video Downloader" });
     const { fetch } = createFetch({
-        [PLAYLIST_URL]: { body: `#EXTM3U\n#EXT-X-MAP:URI="${mediaUrl}"\n` }
+        [PLAYLIST_URL]: { body: `#EXTM3U\n#EXT-X-MAP:URI="${mediaUrl}"\n` },
+        [mediaUrl]: { status: mediaStatus }
     });
     loadScripts(BACKGROUND_SCRIPTS, { browser, fetch, DOMParser: FakeDOMParser });
     const send = message => Promise.resolve(state.messageListener(message)).then(plain);
@@ -30,6 +31,13 @@ test("download resolves the watch ID and downloads it as <id>.mp4", async () => 
     assert.equal(result.ok, true, result.error);
     assert.deepEqual(state.downloads.map(item => [item.url, item.filename]),
         [["https://media.redgifs.com/AbcDef.m4s", "media_folder/AbcDef.mp4"]]);
+});
+
+test("download reports a deleted video instead of downloading it", async () => {
+    const { send, state } = load("https://media.redgifs.com/AbcDef.m4s", 403);
+    assert.deepEqual(await send({ action: "download", watchId: "AbcDef" }),
+        { ok: false, error: "This Redgifs video no longer exists" });
+    assert.equal(state.downloads.length, 0);
 });
 
 test("download ignores URLs from the page and refuses non-Redgifs hosts", async () => {

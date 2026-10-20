@@ -265,6 +265,10 @@ async function startDownload(media) {
                 throw redgifsError;
             }
 
+            if (!await RedgifsResolver.mediaExists(media.fallbackUrl)) {
+                throw new Error(`${errorMessage(redgifsError)}, and Reddit's copy is missing too`);
+            }
+
             debug("Redgifs download failed; using Reddit fallback URL", {
                 error: errorMessage(redgifsError)
             });
