@@ -84,6 +84,32 @@ test("extractMedia recognizes galleries, videos and Redgifs links", () => {
     assert.equal(extractMedia(post({ url: "https://example.com/article" })), null);
 });
 
+test("extractMedia finds the gallery of a crossposted post", () => {
+    const { get } = load();
+    // Shape of a real crosspost: the clicked post links to the original
+    // gallery, and only the embedded original carries the media.
+    const crosspost = post({
+        url: "https://www.reddit.com/gallery/9xyz87",
+        crosspost_parent: "t3_9xyz87",
+        crosspost_parent_list: [{
+            subreddit: "original",
+            id: "9xyz87",
+            url: "https://www.reddit.com/gallery/9xyz87",
+            is_gallery: true,
+            gallery_data: { items: [{ media_id: "m1" }, { media_id: "m2" }] },
+            media_metadata: {
+                m1: { status: "valid", e: "Image", m: "image/jpg" },
+                m2: { status: "valid", e: "Image", m: "image/png" }
+            }
+        }]
+    });
+    assert.deepEqual(plain(get("extractMedia")(crosspost)), {
+        type: "gallery",
+        items: ["https://i.redd.it/m1.jpg", "https://i.redd.it/m2.png"],
+        namePrefix: "pics_1abc2d"
+    });
+});
+
 function postJsonRoute(fields) {
     return {
         "https://www.reddit.com/comments/1abc2d.json": {

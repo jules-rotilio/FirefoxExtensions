@@ -66,8 +66,11 @@ function makeNamePrefix(post) {
     return [safe(post.subreddit), safe(post.id)].filter(Boolean).join("_") || "reddit";
 }
 
+// A crosspost carries no media of its own; Reddit embeds the original post in
+// crosspost_parent_list. Files keep the name prefix of the post that was clicked.
 function extractMedia(post) {
-    const media = extractPostMedia(post);
+    const media = extractPostMedia(post) ??
+        (post.crosspost_parent_list?.[0] ? extractPostMedia(post.crosspost_parent_list[0]) : null);
     return media ? { ...media, namePrefix: makeNamePrefix(post) } : null;
 }
 
