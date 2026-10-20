@@ -27,6 +27,8 @@ The extension supports:
 - Reddit galleries
 - Reddit-hosted videos
 - Redgifs videos linked from Reddit posts
+- Crossposts: the media of the original post is downloaded, named after the
+  crosspost that was clicked
 
 Reddit post data, media extraction, Redgifs resolution, and downloads are
 handled by `background.js`. The content script observes Reddit's page and adds
@@ -149,7 +151,7 @@ SOFTWARE.
 
 From an unpacked copy of the extension (a built `.zip` extracted, or
 `build/Reddit Media Downloader/` in the source repository after running
-`pwsh -File ./build.ps1 -StageOnly`):
+`pwsh -File ./scripts/build.ps1 -StageOnly`):
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. Click **Load Temporary Add-on**.

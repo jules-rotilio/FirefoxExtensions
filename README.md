@@ -14,8 +14,11 @@ Reddit Media Downloader/   extension-specific source (manifest, scripts, icon, R
 Redgifs Video Downloader/  extension-specific source
 shared/                    code and settings page used by both extensions
 tests/                     automated tests (Node's built-in test runner)
-package.json               defines `npm test`; no dependencies
-build.ps1                  stage, test, lint, build, sign, commit and push
+package.json               defines `npm test` and the web-ext dependency
+scripts/build.ps1          stage, test, lint and zip the extensions
+scripts/sign.ps1           sign the built extensions through addons.mozilla.org
+scripts/commit.ps1         commit, tag and push
+scripts/common.ps1         helpers shared by the three scripts (not run directly)
 .env                       AMO signing credentials (not in git, see Signing)
 build/                     generated unpacked extensions (not in git)
 archives/                  built .zip and signed .xpi files (not in git)
@@ -28,12 +31,14 @@ never in `build/`, which is replaced on every run.
 
 ## Requirements
 
-- [PowerShell 7](https://learn.microsoft.com/powershell/) (`pwsh`) for
-  `build.ps1`.
+- [PowerShell 7](https://learn.microsoft.com/powershell/) (`pwsh`) for the
+  scripts in `scripts/`.
 - [Node.js](https://nodejs.org/) 22 or later for the tests.
-- [web-ext](https://github.com/mozilla/web-ext) (`npm install --global
-  web-ext`) for linting, building and signing.
-- git, for `-Commit` and `-Push`.
+- [web-ext](https://github.com/mozilla/web-ext) for linting, building and
+  signing: run `npm install` once to install the version from
+  `package.json`. The scripts use that copy, or a global `web-ext` if
+  `node_modules/` is missing.
+- git, for `commit.ps1`.
 
 ## Shared sources
 
@@ -74,7 +79,7 @@ Each file in `shared/` has a specific role:
 Assemble both extensions without testing or archiving:
 
 ```powershell
-pwsh -File ./build.ps1 -StageOnly
+pwsh -File ./scripts/build.ps1 -StageOnly
 ```
 
 Then load `build/<extension>/manifest.json` from
@@ -108,40 +113,38 @@ To add a test, copy an existing `test(...)` block, change the input, and state
 the expected result with `assert.equal` or `assert.deepEqual`. Wrap values
 returned from the sandbox in `plain(...)` before `assert.deepEqual`.
 
-## Build archives
+## Scripts
 
-Run `pwsh -File ./build.ps1 -Help` (or `Get-Help ./build.ps1 -Full` from a
-PowerShell prompt) for every parameter, the combinations it accepts, and
-examples. PowerShell rejects invalid combinations such as `-Major -Minor` or
-`-StageOnly -Sign` before anything runs.
-
-Run `pwsh -File ./build.ps1` from this directory to build both
-extensions. For each extension the script stages `build/<extension>/`, runs
-`web-ext lint` (stopping on errors), and zips the staged copy with
-`web-ext build`. The tests run once before the extensions are built; pass
-`-SkipTests` to skip them. To build only one extension, pass a target:
+Each script prints its parameters, the combinations it accepts and examples
+with `-Help` (or `Get-Help ./scripts/<name>.ps1 -Full` from a PowerShell
+prompt). PowerShell rejects invalid combinations, such as `-Major -Minor`,
+before anything runs. A release is the three scripts in order:
 
 ```powershell
-pwsh -File ./build.ps1 -Target Reddit
-pwsh -File ./build.ps1 -Target Redgifs
+pwsh -File ./scripts/build.ps1 -Target Reddit -Minor
+pwsh -File ./scripts/sign.ps1 -Target Reddit
+pwsh -File ./scripts/commit.ps1 -Tag -Target Reddit -Push
 ```
 
-The accepted targets are `Reddit`, `Redgifs`, and `Both`. `Both` is the
-default. The script reads each extension's version from its `manifest.json`.
+### Build and validation: `build.ps1`
 
-To bump a version, target exactly one extension and pass one switch:
+`pwsh -File ./scripts/build.ps1` builds both extensions. The tests run once
+first (`-SkipTests` skips them). Then, for each extension, the script stages
+`build/<extension>/`, runs `web-ext lint` (stopping on errors), and zips the
+staged copy with `web-ext build`. `-Target Reddit` or `-Target Redgifs` builds
+only one; `Both` is the default. `-StageOnly` only stages (see Development).
+
+The script reads each extension's version from its `manifest.json`. To bump
+it, target exactly one extension and pass one switch:
 
 ```powershell
-pwsh -File ./build.ps1 -Target Reddit -Major
-pwsh -File ./build.ps1 -Target Redgifs -Minor
+pwsh -File ./scripts/build.ps1 -Target Reddit -Major
+pwsh -File ./scripts/build.ps1 -Target Redgifs -Minor
 ```
 
-`-Major` increments the first numeric component and resets later components to
-zero. `-Minor` increments the second component and resets any later components
-to zero. The script updates only the selected extension's manifest, then builds
-the archive in a directory named for the new version and current date. The two
-bump switches cannot be used together, and neither can be used with `-Target
-Both`.
+`-Major` increments the first numeric component and resets later components
+to zero. `-Minor` increments the second component and resets any later
+components to zero. Only the selected extension's manifest is changed.
 
 Archives are written to:
 
@@ -150,21 +153,23 @@ archives/<extension>/<version>_<yyyy-MM-dd>/<archive-name>.zip
 ```
 
 For each extension, `archives/<extension>/latest` links to the most recently
-built version/date directory. The script creates a directory junction on
-Windows and a symbolic link on other PowerShell platforms.
+built version/date directory: a directory junction on Windows, a symbolic link
+elsewhere.
 
-## Signing
+### Signing: `sign.ps1`
 
-`-Sign` submits each built extension to addons.mozilla.org as an **unlisted**
-(self-distributed) version and saves the signed `.xpi` next to the `.zip`:
+`pwsh -File ./scripts/sign.ps1 -Target Reddit` submits the staged extension to
+addons.mozilla.org as an **unlisted** (self-distributed) version and saves the
+signed `.xpi` in `archives/<extension>/latest/`, next to the `.zip`.
 
-```powershell
-pwsh -File ./build.ps1 -Target Reddit -Minor -Sign
-```
+It refuses to sign when `build/<extension>/` is missing or differs from the
+sources, or when the latest archive was built for another version, so what is
+signed is what `build.ps1` tested. AMO refuses a version number it has already
+signed, so bump the version with `build.ps1` before signing again.
 
 Create the key and secret at
 <https://addons.mozilla.org/developers/addon/api/key/> and put them in a `.env`
-file next to this script:
+file at the repository root:
 
 ```text
 WEB_EXT_API_KEY=user:12345:67
@@ -174,24 +179,25 @@ WEB_EXT_API_SECRET=...
 The script reads `.env` at startup (blank lines and `#` comments are skipped,
 quotes around values are removed) and sets the variables for that run only.
 Variables already set in the environment win over `.env`. `.env` is listed in
-`.gitignore`; never commit it. AMO refuses a version number it has already
-signed, so bump the version before signing again.
+`.gitignore`; never commit it.
 
-## Git
+### Git: `commit.ps1`
 
-The repository covers both extensions, `shared/`, the tests and this script.
+The repository covers both extensions, `shared/`, the tests and the scripts.
 `build/` and `archives/` are ignored; keep signed `.xpi` files elsewhere too
 (for example as GitHub release assets), because ignored files are not backed
 up by git.
 
-`-Commit` stages every change in the repository, commits it, and adds an
-annotated tag per built extension (`reddit-v1.3`, `redgifs-v1.2`). An existing
-tag is left unchanged. `-Message` replaces the default commit message
-(`Build Reddit Media Downloader 1.3`) and is only accepted with `-Commit`. `-Push` pushes the current branch and its
-tags to `origin`:
+`commit.ps1` stages every change in the repository and commits it, so check
+`git status` first:
 
 ```powershell
-pwsh -File ./build.ps1 -Target Redgifs -Minor -Sign -Commit -Push
+pwsh -File ./scripts/commit.ps1 -Message "Fix crosspost galleries"
+pwsh -File ./scripts/commit.ps1 -Tag -Target Reddit -Push
 ```
 
-Because `-Commit` includes all changes, check `git status` first.
+`-Message` is required for a plain commit. `-Tag` adds an annotated tag named
+after each selected extension's current version (`reddit-v1.3`,
+`redgifs-v1.2`) and makes `-Message` optional, defaulting to
+`Release Reddit Media Downloader 1.3`. An existing tag is left unchanged.
+`-Push` pushes the current branch and its tags to `origin`.

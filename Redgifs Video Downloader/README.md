@@ -83,7 +83,7 @@ license does not grant trademark rights or imply endorsement.
 
 From an unpacked copy of the extension (a built `.zip` extracted, or
 `build/Redgifs Video Downloader/` in the source repository after running
-`pwsh -File ./build.ps1 -StageOnly`):
+`pwsh -File ./scripts/build.ps1 -StageOnly`):
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. Click **Load Temporary Add-on**.

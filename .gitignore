@@ -1,4 +1,4 @@
-# Generated unpacked extensions (see build.ps1)
+# Generated unpacked extensions (see scripts/build.ps1)
 build/
 # Built zips and signed .xpi files
 archives/
